@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/elemc/serial"
@@ -304,11 +305,21 @@ func (cnv *tcpConverter) toRS485Listen() {
 func (cnv *tcpConverter) toTCPListener() {
 	cnv.logger.WithField("addr", cnv.netAddr).Info("Start data channel")
 	for data := range cnv.dataToTCP {
-		for _, conn := range cnv.tcpConnections {
+		for idx, conn := range cnv.tcpConnections {
 			if conn == nil {
 				continue
 			}
 			if _, err := conn.Write(data); err != nil {
+				if errors.Is(err, syscall.EPIPE) {
+					cnv.Lock()
+					cnv.tcpConnections = append(cnv.tcpConnections[:idx], cnv.tcpConnections[idx+1:]...)
+					cnv.Unlock()
+					cnv.logger.
+						WithField("addr", cnv.netAddr).
+						WithField("remote", conn.RemoteAddr().String()).
+						Info("TCP connection closed")
+					continue
+				}
 				cnv.logger.
 					WithError(err).
 					WithField("addr", cnv.netAddr).
