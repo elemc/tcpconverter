@@ -18,7 +18,10 @@ func main() {
 		tcpAddr    string
 		tcpTimeout time.Duration
 	)
-	config := &serial.Config{RS485: serial.RS485Config{Enabled: true}}
+	config := &serial.Config{RS485: serial.RS485Config{
+		//Enabled: true,
+		//RxDuringTx: true,
+	}}
 
 	flag.StringVar(&tcpAddr, "tcp-addr", "localhost:4001", "TCP address and port")
 	flag.DurationVar(&tcpTimeout, "tcp-timeout", time.Millisecond*100, "TCP timeout")
@@ -38,6 +41,7 @@ func main() {
 		DisableTimestamp: false,
 	},
 	)
+	logger.SetLevel(logrus.DebugLevel)
 
 	converter := tcpconverter.NewTCPConverter(
 		logger,

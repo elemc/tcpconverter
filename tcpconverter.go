@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -102,6 +103,7 @@ func (cnv *tcpConverter) Serve() (err error) {
 	go cnv.toTCPListener()
 
 	go cnv.listenTCP()
+	go cnv.listenSerial()
 
 	return
 }
@@ -171,19 +173,34 @@ func (cnv *tcpConverter) readerWorker(conn *net.TCPConn) {
 		reader := bufio.NewReader(conn)
 		data, err := reader.ReadBytes(0x0d)
 		if err != nil {
+			if netErr, ok := err.(net.Error); ok {
+				if netErr.Timeout() {
+					continue
+				}
+			}
+			if err == io.EOF {
+				break
+			}
 			cnv.logger.
 				WithError(err).
 				WithField("addr", cnv.netAddr).
 				Error("Unable to read from TCP connection")
 			continue
 		}
+
+		cnv.logger.
+			WithField("addr", cnv.netAddr).
+			WithField("hex", hex.EncodeToString(data)).
+			WithField("data", bytes.NewBuffer(data).String()).
+			Debug("Has new data from TCP")
+
 		select {
 		case cnv.dataToRS485 <- data:
 			cnv.logger.
 				WithField("data", bytes.NewBuffer(data).String()).
 				WithField("hex", hex.EncodeToString(data)).
 				WithField("addr", cnv.netAddr).
-				Debug("Incoming data")
+				Debug("Incoming data to RS-485")
 		case <-time.After(cnv.tcpTimeout):
 			cnv.logger.
 				WithField("addr", cnv.netAddr).
@@ -232,17 +249,27 @@ func (cnv *tcpConverter) listenSerial() {
 		reader := bufio.NewReader(cnv.serialPort)
 		data, err := reader.ReadBytes(0x0d)
 		if err != nil {
-			cnv.logger.WithError(err).
-				WithField("addr", cnv.config.Address).
-				Error("Unable to read from serial port")
+			if err != serial.ErrTimeout {
+				cnv.logger.WithError(err).
+					WithField("addr", cnv.config.Address).
+					Error("Unable to read from serial port")
+			}
+			continue
 		}
+
+		cnv.logger.
+			WithField("addr", cnv.config.Address).
+			WithField("hex", hex.EncodeToString(data)).
+			WithField("data", bytes.NewBuffer(data).String()).
+			Debug("Has new data from serial")
+
 		select {
 		case cnv.dataToTCP <- data:
 			cnv.logger.
 				WithField("data", bytes.NewBuffer(data).String()).
 				WithField("hex", hex.EncodeToString(data)).
 				WithField("addr", cnv.config.Address).
-				Debug()
+				Debug("Incoming data to TCP")
 		case <-time.After(cnv.tcpTimeout):
 			cnv.logger.
 				WithField("addr", cnv.config.Address).
@@ -257,12 +284,19 @@ func (cnv *tcpConverter) listenSerial() {
 func (cnv *tcpConverter) toRS485Listen() {
 	cnv.logger.WithField("addr", cnv.config.Address).Info("Start data channel")
 	for data := range cnv.dataToRS485 {
-		if _, err := cnv.serialPort.Write(data); err != nil {
+		n, err := cnv.serialPort.Write(data)
+		if err != nil {
 			cnv.logger.
 				WithError(err).
 				WithField("addr", cnv.config.Address).
+				WithField("bytes", n).
 				Error("Unable to write data to serial port")
 		}
+		cnv.logger.
+			WithField("addr", cnv.config.Address).
+			WithField("bytes", n).
+			WithField("data", bytes.NewBuffer(data).String()).
+			Debug("Write data to serial port")
 	}
 	cnv.logger.WithField("addr", cnv.config.Address).Info("Stop data channel")
 }
