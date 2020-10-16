@@ -59,8 +59,8 @@ func NewTCPConverter(
 		netAddr:     tcpAddr,
 		tcpTimeout:  tcpTimeout,
 		config:      config,
-		dataToTCP:   make(chan []byte, 100),
-		dataToRS485: make(chan []byte, 100),
+		dataToTCP:   make(chan []byte, 10000),
+		dataToRS485: make(chan []byte, 10000),
 	}
 }
 
