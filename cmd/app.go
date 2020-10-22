@@ -63,5 +63,7 @@ func main() {
 	<-signalChannel
 
 	converter.Stop()
-	_ = converter.Close()
+	if err := converter.Close(); err != nil {
+		logger.WithError(err).Error("Unable to close converter connections")
+	}
 }

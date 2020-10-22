@@ -309,6 +309,16 @@ func (cnv *tcpConverter) toTCPListener() {
 			if conn == nil {
 				continue
 			}
+			deadLine := time.Now().Add(cnv.tcpTimeout)
+			if err := conn.SetWriteDeadline(deadLine); err != nil {
+				cnv.logger.
+					WithError(err).
+					WithField("deadline", deadLine).
+					WithField("addr", cnv.netAddr).
+					WithField("remote", conn.RemoteAddr().String()).
+					Error("Unable to set write deadline")
+				continue
+			}
 			if _, err := conn.Write(data); err != nil {
 				if errors.Is(err, syscall.EPIPE) {
 					cnv.Lock()
